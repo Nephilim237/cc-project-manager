@@ -1,0 +1,8 @@
+.env
+.env.*
+node_modules/
+.idea/
+.vscode/
+
+# Vite files
+.vite/
