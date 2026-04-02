@@ -3,7 +3,7 @@ import axios from "axios";
 // l'utilisation de la librairie Axios nous permet de gerer automatiquement
 // le JSON.stringify, le Content-Type et le response.json
 
-const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api/auth'}`;
+const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/auth`;
 
 const register = async (name, email, password, password2) => {
 	try {
