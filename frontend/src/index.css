@@ -162,6 +162,8 @@
 
 /* BOUTONS */
 @utility btn {
+	-webkit-appearance: none;
+	appearance: none;
 	@apply inline-flex items-center justify-center gap-2 text-center;
 	@apply px-4 py-3 rounded-full font-medium transition;
 }
