@@ -117,32 +117,6 @@
 		@apply border-danger-500 focus:ring-danger-500;
 	}
 
-	/* BOUTONS */
-	.btn {
-		@apply inline-flex items-center justify-center gap-2 text-center;
-		@apply px-4 py-3 rounded-full font-medium transition;
-	}
-
-	.btn-sm {
-		@apply px-3 py-1 text-sm;
-	}
-
-	.btn-xs {
-		@apply px-2 py-1 text-xxs;
-	}
-
-	.btn-red {
-		@apply bg-red-500 text-white hover:bg-red-700;
-	}
-
-	.btn-yellow {
-		@apply bg-yellow-400 text-dark-500 hover:bg-yellow-500;
-	}
-
-	.btn-green {
-		@apply bg-green-400 text-white hover:bg-green-600;
-	}
-
 	/* CARD (CARTES) */
 	.card {
 		@apply bg-white border border-dark-100 rounded-lg p-5;
@@ -184,6 +158,32 @@
 	.success-message {
 		@apply bg-green-400/50 text-green-800 p-4 rounded-lg mb-6 animate-pulse;
 	}
+}
+
+/* BOUTONS */
+@utility btn {
+	@apply inline-flex items-center justify-center gap-2 text-center;
+	@apply px-4 py-3 rounded-full font-medium transition;
+}
+
+@utility btn-sm {
+	@apply px-3 py-1 text-sm;
+}
+
+@utility btn-xs {
+	@apply px-2 py-1 text-xxs;
+}
+
+@utility btn-red {
+	@apply bg-red-500 text-white hover:bg-red-700;
+}
+
+@utility btn-yellow {
+	@apply bg-yellow-400 text-dark-500 hover:bg-yellow-500;
+}
+
+@utility btn-green {
+	@apply bg-green-400 text-white hover:bg-green-600;
 }
 
 :root {

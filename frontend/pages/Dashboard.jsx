@@ -29,8 +29,10 @@ const Dashboard = () => {
 	// Fonction pour charger les projets depuis l'API
 	const fetchProjects = async () => {
 		try {
-			const data = await projectService.getProjects();
-			setProjects(data);
+			const projects = await projectService.getProjects();
+			setProjects(projects);
+
+			console.log(projects);
 
 			const taskStats = await taskService.getStats();
 			setStats(taskStats);

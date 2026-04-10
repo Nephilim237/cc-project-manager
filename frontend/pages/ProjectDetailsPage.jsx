@@ -4,6 +4,7 @@ import projectService from "../services/projectService";
 import taskService from "../services/taskService";
 import userService from "../services/userService";
 import TaskForm from "../components/TaskForm";
+import Chat from "../components/Chat";
 
 const ProjectDetailsPage = () => {
 	const { projectId } = useParams(); // Recupere l'ID du projet depuis l'URL
@@ -47,7 +48,7 @@ const ProjectDetailsPage = () => {
 			// Charger les utilisateurs de notre plateforme
 			const users = await userService.getUsers();
 			console.log(users);
-			
+
 			setAllUsers(users);
 			setError("");
 		} catch (err) {
@@ -320,6 +321,11 @@ const ProjectDetailsPage = () => {
 						</div>
 					</div>
 				</div>
+			</div>
+
+			{/* Section Chat */}
+			<div className="mt-8">
+				<Chat projectId={projectId} />
 			</div>
 		</div>
 	);

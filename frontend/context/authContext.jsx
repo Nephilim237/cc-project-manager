@@ -1,5 +1,6 @@
 import { createContext, useState } from 'react';
 import authService from '../services/authService';
+import { disconnectSocket } from '../services/socketService';
 
 // 1. Creation du context
 export const AuthContext = createContext();
@@ -42,6 +43,7 @@ export const AuthProvider = ({ children }) => {
     // Fonction pour gerer la deconnexion
     const logout = () => {
         authService.logout();
+        disconnectSocket(); // Fermer proprement la connexion WebSocket
         setUser(null);
     };
 
