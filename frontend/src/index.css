@@ -31,7 +31,7 @@
 	--color-primary-500: var(--color-green-500);
 	--color-primary-300: var(--color-green-300);
 	--color-primary-700: var(--color-green-700);
-	--color-accent-500: var(--color-yello-500);
+	--color-accent-500: var(--color-yellow-500);
 	--color-bg: var(--color-white);
 	--color-surface: #f9fafb;
 	--color-text: var(--color-dark-500);
@@ -206,8 +206,5 @@
 	}
 	a:hover {
 		color: #747bff;
-	}
-	button {
-		background-color: #f9f9f9;
 	}
 }
