@@ -25,12 +25,12 @@ const protect = async (req, res, next) => {
 			req.user = {id: decoded.id, role: decoded.role};
 			next();
 		} catch (error) {
-			res.status(401).json({ message: "Acces non autorise: token invalide ou expire" });
+			return res.status(401).json({ message: "Acces non autorise: token invalide ou expire" });
 		}
 	}
 
 	if (!token) {
-		res.status(401).json({ message: "Acces non autorise: token manquant" });
+		return res.status(401).json({ message: "Acces non autorise: token manquant" });
 	}
 };
 export { protect };

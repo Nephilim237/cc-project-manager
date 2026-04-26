@@ -119,7 +119,7 @@ export const addMember = async (req, res) => {
 		}
 
 		// Verifier si l'utilisateur qu'on souhaite ajouter est deja membre duy projet
-		if (project.members.includes(userId)) {
+		if (project.members.some(id => id.equals(userId))) {
 			return res.status(400).json({ message: "Cet utilisateur es deja membre de ce projet." });
 		}
 

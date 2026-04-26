@@ -35,7 +35,7 @@ export const createTask = async (req, res) => {
 			title,
 			description,
 			status,
-			priority: priority || "Medium",
+			priority: priority || "medium",
 			project: projectId,
 			assignedTo: assignedTo || null,
 			dueDate,
@@ -112,6 +112,9 @@ export const updateTask = async (req, res) => {
 
 		// Verifier que l'utilisateur est membre du projet
 		const project = await Project.findById(task.project);
+		if (!project) {
+			return res.status(404).json({ message: "Projet non trouve" });
+		}
 		const isMember = project.owner.equals(req.user.id) || project.members.includes(req.user.id);
 		const isAdmin = ["admin", "project-manager"].includes(req.user.role);
 		if (!isMember && !isAdmin) {
@@ -144,6 +147,9 @@ export const deleteTask = async (req, res) => {
 
 		// Seul celui qui cree la tache, le proprietaire du projet ou un admin peut la supprimer
 		const project = await Project.findById(task.project);
+		if (!project) {
+			return res.status(404).json({ message: "Projet non trouve" });
+		}
 		const isCreator = task.createdBy.equals(req.user.id);
 		const isOwner = project.owner.equals(req.user.id);
 		const isAdmin = ["admin", "project-manager"].includes(req.user.role);

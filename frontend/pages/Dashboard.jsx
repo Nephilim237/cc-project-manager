@@ -4,6 +4,8 @@ import { useNavigate, Link } from "react-router-dom";
 import projectService from "../services/projectService.js";
 import taskService from "../services/taskService.js";
 import ProjectForm from "../components/ProjectForm"; // Importation du formulaire
+import useOnlineStatus from "../hooks/useOnlineStatus.js";
+import cacheService from "../services/cacheService.js";
 
 const Dashboard = () => {
 	const { user, logout } = useAuth();
@@ -21,6 +23,8 @@ const Dashboard = () => {
 	// state pour les stats
 	const [stats, setStats] = useState(null);
 
+	const isOnline = useOnlineStatus();
+
 	const handleLogout = () => {
 		logout();
 		navigate("/login", { replace: true });
@@ -28,18 +32,29 @@ const Dashboard = () => {
 
 	// Fonction pour charger les projets depuis l'API
 	const fetchProjects = async () => {
+		if (!isOnline) {
+			// Mode offline : charger depuis le cache
+			const cached = cacheService.getProjects();
+			setProjects(cached);
+			setLoading(false);
+			return;
+		}
 		try {
 			const projects = await projectService.getProjects();
 			setProjects(projects);
-
-			console.log(projects);
-
+			cacheService.saveProjects(projects); // Mettre a jour les projets dans le cache
 			const taskStats = await taskService.getStats();
 			setStats(taskStats);
-
 			setMessage(null);
 		} catch (error) {
-			setMessage(error.message);
+			// En cas d'eerreur reseau, fallback sur le cache
+			const cached = cacheService.getProjects();
+			if (cached.length > 0) {
+				setProjects(cached);
+				setMessage("⚠️ Mode hors ligne - donnees en cache");
+			} else {
+				setMessage(error.message);
+			}
 			// Si le token est invalide (401), on deconnecte l'utilisateur
 			if (error.message.includes("Acces non autorise")) {
 				handleLogout();
@@ -90,7 +105,7 @@ const Dashboard = () => {
 	// Suppression d'un projet
 	const handleDeleteProject = async (e, projectId) => {
 		e.preventDefault(); // Empecher la navigation vers les projet
-		if (!window.confirm("Supprimer ce projet? Cette action est irreversible."));
+		if (!window.confirm("Supprimer ce projet? Cette action est irreversible.")) return;
 		try {
 			await projectService.deleteProject(projectId);
 			setProjects(projects.filter((p) => p._id !== projectId));
@@ -154,6 +169,13 @@ const Dashboard = () => {
 						<p className="text-sm text-gray-500 mt-1">Projets terminés</p>
 					</div>
 				</div>
+			)}
+
+			{/* Indicateur visuel sur l'etat de connection de l'ordinateur */}
+			{!isOnline && (
+				<span className="inline-flex items-center gap-1 ml-4 px-3 py-1 bg-red-100 text-red-600 text-xs rounded-full font-semibold">
+					⚠️ Hors ligne — modifications désactivées
+				</span>
 			)}
 
 			<div className="grid grid-cols-1 md:grid-cols-3 gap-8">

@@ -5,6 +5,8 @@ import taskService from "../services/taskService";
 import userService from "../services/userService";
 import TaskForm from "../components/TaskForm";
 import Chat from "../components/Chat";
+import useOnlineStatus from "../hooks/useOnlineStatus";
+import cacheService from "../services/cacheService";
 
 const ProjectDetailsPage = () => {
 	const { projectId } = useParams(); // Recupere l'ID du projet depuis l'URL
@@ -28,11 +30,30 @@ const ProjectDetailsPage = () => {
 	const [memberError, setMemberError] = useState('');
 	const [memberSuccess, setMemberSuccess] = useState('');
 
+	const isOnline = useOnlineStatus();
+
 	// Fonction de chargement des details du projet et de ses taches
 	const loadProjectDetails = async () => {
+		if (!isOnline) {
+			// Mode offline : charger depuis le cache
+			const cachedProjects = cacheService.getProjects();
+			const found = cachedProjects.find((p) => p._id === projectId);
+			if (found) {
+				setProject(found);
+				const cachedTasks = cacheService.getTasks(projectId);
+				setTasks(cachedTasks);
+				setAllUsers(cacheService.getUsers());
+			} else {
+				setError("Projet non disponible hors ligne.");
+			}
+			setLoading(false);
+			return;
+		}
 		try {
 			// NOTE: On suppose que projectService a une methode getProjectById et on va simuler en utilisant la liste des getProjects et en filtrant cote front-end, ensuite, nous allons implementer getProjectById dans le backend
 			const allProjects = await projectService.getProjects();
+			cacheService.saveProjects(allProjects);
+
 			const project = allProjects.find((p) => p._id === projectId);
 			if (!project) {
 				setError("Projet non trouvé ou accès refusé.");
@@ -43,16 +64,26 @@ const ProjectDetailsPage = () => {
 
 			// Charger les taches associees au projet
 			const projectTasks = await taskService.getTasksByProject(projectId);
+			cacheService.saveTasks(projectId, projectTasks); // Mettre a jour le cache
 			setTasks(projectTasks);
 
 			// Charger les utilisateurs de notre plateforme
 			const users = await userService.getUsers();
-			console.log(users);
-
+			cacheService.saveUsers(users); // Mettre en cache
 			setAllUsers(users);
 			setError("");
-		} catch (err) {
-			setError(err.message || "Erreur lors du chargement des details du projet.");
+		} catch (error) {
+			// Fallback en cas d'erreur reseau
+			const cachedProjects = cacheService.getProjects();
+			const project = cachedProjects.find((p) => p._id === projectId);
+			if(project) {
+				setProject(project);
+				setTasks(cacheService.getTasks(projectId));
+				setAllUsers(cacheService.getUsers());
+				setError("⚠️ Mode hors ligne - donnees en cache");
+			} else {
+				setError(error.message || "Erreur lors du chargement des details du projet.");
+			}
 		} finally {
 			setLoading(false);
 		}
@@ -64,7 +95,7 @@ const ProjectDetailsPage = () => {
 
 	// Ajouter une nbouvelle tache a la liste
 	const handleTaskCreated = (newTask) => {
-		setTasks([newTask, ...tasks]); // Ajouter la nouvelle tache en tete de liste
+		setTasks(tasks => [newTask, ...tasks]); // Ajouter la nouvelle tache en tete de liste
 	};
 
 	//  Supprimer une tache
