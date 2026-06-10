@@ -32,30 +32,28 @@ const Dashboard = () => {
 
 	// Fonction pour charger les projets depuis l'API
 	const fetchProjects = async () => {
-		if (!isOnline) {
-			// Mode offline : charger depuis le cache
-			const cached = cacheService.getProjects();
-			setProjects(cached);
-			setLoading(false);
-			return;
-		}
+		setLoading(true);
+		// if (!isOnline) {
+		// 	// Mode offline : charger depuis le cache
+		// 	const cached = cacheService.getProjects();
+		// 	setProjects(cached);
+		// 	setLoading(false);
+		// 	return;
+		// }
 		try {
 			const projects = await projectService.getProjects();
-			setProjects(projects);
-			cacheService.saveProjects(projects); // Mettre a jour les projets dans le cache
+			setProjects(projects || []);
+			cacheService.saveProjects(projects || []); // Mettre a jour les projets dans le cache
+
 			const taskStats = await taskService.getStats();
 			setStats(taskStats);
-			setMessage(null);
+			setMessage(!isOnline ? "⚠️ Mode hors ligne - Donnees en cache" : null);
 		} catch (error) {
 			// En cas d'eerreur reseau, fallback sur le cache
 			const cached = cacheService.getProjects();
-			if (cached.length > 0) {
-				setProjects(cached);
-				setMessage("⚠️ Mode hors ligne - donnees en cache");
-			} else {
-				setMessage(error.message);
-			}
-			// Si le token est invalide (401), on deconnecte l'utilisateur
+			setProjects(cached);
+			setMessage(error.message || "Erreur lors du chargement des projets");
+
 			if (error.message.includes("Acces non autorise")) {
 				handleLogout();
 			}
@@ -67,11 +65,12 @@ const Dashboard = () => {
 	// Charger les projets au montage du composant
 	useEffect(() => {
 		fetchProjects();
-	}, []);
+	}, [isOnline]);
 
 	// Fonction passee au formulaire pour rafraichir la liste
 	const handleProjectCreated = (newProject) => {
 		setProjects([newProject, ...projects]); // On ajoute le nouveau projet aux autres existant deja
+		setMessage(newProject?._pending ? "Projet cree hors ligne. Synchronisation en attente" : null)
 	};
 
 	// Ouvrir le formulaire de modification inline
@@ -95,10 +94,12 @@ const Dashboard = () => {
 				description: editDescription,
 				status: editStatus,
 			});
-			setProjects(projects.map((p) => (p._id === projectId ? updated : p)));
+
+			setProjects((prev) => prev.map((p) => (p._id === projectId ? updated : p)));
 			setEditingProject(null);
+			if (updated?._pending) setMessage("Modification enregistree hors ligne");
 		} catch (error) {
-			setMessage("Errur lors de la mise a jour du projet");
+			setMessage(error.message || "Erreur lors de la mise a jour du projet");
 		}
 	}
 
@@ -108,9 +109,10 @@ const Dashboard = () => {
 		if (!window.confirm("Supprimer ce projet? Cette action est irreversible.")) return;
 		try {
 			await projectService.deleteProject(projectId);
-			setProjects(projects.filter((p) => p._id !== projectId));
+			setProjects((prev) => prev.filter((p) => p._id !== projectId));
+			if (!isOnline) setMessage("suppression planifiee hors ligne.");
 		} catch (error) {
-			setMessage("Errue lors de la suppression du projet.");
+			setMessage(error.message || "Erreur lors de la suppression du projet.");
 		}
 	}
 
@@ -174,7 +176,7 @@ const Dashboard = () => {
 			{/* Indicateur visuel sur l'etat de connection de l'ordinateur */}
 			{!isOnline && (
 				<span className="inline-flex items-center gap-1 ml-4 px-3 py-1 bg-red-100 text-red-600 text-xs rounded-full font-semibold">
-					⚠️ Hors ligne — modifications désactivées
+					⚠️ Hors ligne — modifications locales autorisees (sync differee)
 				</span>
 			)}
 
@@ -198,10 +200,12 @@ const Dashboard = () => {
 									{editingProject !== project._id ? (
 										<div className="flex justify-between items-start">
 											<Link to={`/projects/${project._id}`} key={project._id} >
-												<h3 className="card-title">{project.title}</h3>
+												<h3 className="card-title">
+													{project.title} {project._pending ? <span className="text-xs">En attente</span> : null}
+												</h3>
 												<p className="text-gray-600 text-sm mt-1">{project.description}</p>
 												<p className="card-muted mt-2">
-													Crée le : {new Date(project.createdAt).toLocaleDateString()} Par {project.owner.name} | Nombre de Participants:{" "}
+													Crée le : {project.createdAt ? new Date(project.createdAt).toLocaleDateString() : "-"} Par {" "} {project.owner?.name || "N/A"} | Nombre de Participants:{" "}
 													{project.members.length}
 												</p>
 											</Link>

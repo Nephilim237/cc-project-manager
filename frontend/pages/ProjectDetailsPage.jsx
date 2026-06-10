@@ -7,10 +7,12 @@ import TaskForm from "../components/TaskForm";
 import Chat from "../components/Chat";
 import useOnlineStatus from "../hooks/useOnlineStatus";
 import cacheService from "../services/cacheService";
+import { StatusBadge, PriorityBadge, getPriorityCardClass } from "../components/TaskBadges";
 
 const ProjectDetailsPage = () => {
 	const { projectId } = useParams(); // Recupere l'ID du projet depuis l'URL
 	const navigate = useNavigate();
+
 	const [project, setProject] = useState(null);
 	const [tasks, setTasks] = useState([]);
 	const [error, setError] = useState("");
@@ -34,51 +36,52 @@ const ProjectDetailsPage = () => {
 
 	// Fonction de chargement des details du projet et de ses taches
 	const loadProjectDetails = async () => {
-		if (!isOnline) {
-			// Mode offline : charger depuis le cache
-			const cachedProjects = cacheService.getProjects();
-			const found = cachedProjects.find((p) => p._id === projectId);
-			if (found) {
-				setProject(found);
-				const cachedTasks = cacheService.getTasks(projectId);
-				setTasks(cachedTasks);
-				setAllUsers(cacheService.getUsers());
-			} else {
-				setError("Projet non disponible hors ligne.");
-			}
-			setLoading(false);
-			return;
-		}
+		setLoading(true);
 		try {
 			// NOTE: On suppose que projectService a une methode getProjectById et on va simuler en utilisant la liste des getProjects et en filtrant cote front-end, ensuite, nous allons implementer getProjectById dans le backend
 			const allProjects = await projectService.getProjects();
-			cacheService.saveProjects(allProjects);
-
-			const project = allProjects.find((p) => p._id === projectId);
+			const project = (allProjects || []).find(
+				(p) => p._id === projectId || p._clientId === projectId
+			);
 			if (!project) {
 				setError("Projet non trouvé ou accès refusé.");
+				setProject(null);
+				setTasks([]);
 				setLoading(false);
 				return;
 			}
 			setProject(project);
 
 			// Charger les taches associees au projet
-			const projectTasks = await taskService.getTasksByProject(projectId);
-			cacheService.saveTasks(projectId, projectTasks); // Mettre a jour le cache
-			setTasks(projectTasks);
+			const resolvedProjectId = project._id;
+			const projectTasks = await taskService.getTasksByProject(resolvedProjectId);
+			setTasks(projectTasks || []);
+			cacheService.saveTasks(resolvedProjectId, projectTasks || []); // Mettre a jour le cache
 
 			// Charger les utilisateurs de notre plateforme
-			const users = await userService.getUsers();
-			cacheService.saveUsers(users); // Mettre en cache
-			setAllUsers(users);
-			setError("");
+			// On ne peut afficher les utilisateurs connectes que s'il y a la connexion
+			if (isOnline) {
+				try {
+					const users = await userService.getUsers();
+					setAllUsers(users);
+					cacheService.saveUsers(users || []); // Mettre en cache
+				} catch {
+					setAllUsers(cacheService.getUsers());
+				}
+			} else {
+				setAllUsers(cacheService.getUsers());
+			}
+			setError(!isOnline ? "⚠️ Mode hors ligne - donnees en cache" : "");
 		} catch (error) {
 			// Fallback en cas d'erreur reseau
 			const cachedProjects = cacheService.getProjects();
-			const project = cachedProjects.find((p) => p._id === projectId);
-			if(project) {
-				setProject(project);
-				setTasks(cacheService.getTasks(projectId));
+			const cachedProject = cachedProjects.find(
+				(p) => p._id === projectId || p._clientId === projectId
+			);
+			if (cachedProject) {
+				const resolvedProjectId = cachedProject._id;
+				setProject(cachedProject);
+				setTasks(cacheService.getTasks(resolvedProjectId));
 				setAllUsers(cacheService.getUsers());
 				setError("⚠️ Mode hors ligne - donnees en cache");
 			} else {
@@ -91,19 +94,20 @@ const ProjectDetailsPage = () => {
 
 	useEffect(() => {
 		loadProjectDetails();
-	}, [projectId]);
+	}, [projectId, isOnline]);
 
 	// Ajouter une nbouvelle tache a la liste
 	const handleTaskCreated = (newTask) => {
-		setTasks(tasks => [newTask, ...tasks]); // Ajouter la nouvelle tache en tete de liste
+		setTasks(prev => [newTask, ...prev]); // Ajouter la nouvelle tache en tete de liste
 	};
 
 	//  Supprimer une tache
 	const handleDeleteTask = async (taskId) => {
 		if (!window.confirm("Supprimer cette tache?")) return;
 		try {
-			await taskService.deleteTask(taskId);
-			setTasks(tasks.filter((t) => t._id !== taskId));
+			await taskService.deleteTask(taskId, project?._id || projectId);
+			setTasks((prev) => prev.filter((t) => t._id !== taskId));
+			if (!isOnline) setError("Suppression planifiee hors ligne.");
 		} catch (error) {
 			setError("erreur lors de la suppression de la tache.");
 		}
@@ -133,9 +137,11 @@ const ProjectDetailsPage = () => {
 				status: editStatus,
 				priority: editPriority,
 				assignedTo: editAssignedTo || null,
-			});
-			setTasks(tasks.map((t) => (t._id === taskId ? updated : t)));
+			}, project?._id || projectId);
+
+			setTasks(prev => prev.map((t) => (t._id === taskId ? updated : t)));
 			setEditingTask(null);
+			if (updated?._pending) setError("Modification enregistree hors ligne.");
 		} catch (error) {
 			setError(`Erreur lors de la mise a jour de la tache ${taskId}.`);
 		}
@@ -143,10 +149,18 @@ const ProjectDetailsPage = () => {
 
 	const handleAddMember = async () => {
 		if (!selectedUser) return;
-		setMemberError('');
+
+		// Si on n'est pas connecte, on ne peut pas ajouter des membres au projet
+		if (!isOnline) {
+			setMemberError("Ajout de membre indisponible hors ligne.");
+			return;
+		}
+
+		setMemberError("");
 		setMemberSuccess('');
+
 		try {
-			const updatedProject = await projectService.addMember(projectId, selectedUser);
+			const updatedProject = await projectService.addMember(project?._id || projectId, selectedUser);
 			setProject(updatedProject);
 			setSelectedUser('');
 			setMemberSuccess("Membre ajoute avec succes !");
@@ -155,15 +169,11 @@ const ProjectDetailsPage = () => {
 			setMemberError(error.message || "Erreur lors de l'ajout du membre.");
 		}
 	};
-	if (loading) {
-		return <div className="p-8">Chargement...</div>;
-	}
-	if (error || !project) {
-		return <div className="p-8 error-message">{error}</div>;
-	}
+	if (loading) return <div className="p-8">Chargement...</div>;
+	if (!project) return <div className="p-8 error-message">{error || "Projet introuvable."}</div>;
 
 	// Concatener le proprietaire et les membres pour afficher tous les participants
-	const allMembers = [project.owner, ...project.members.filter((m) => m._id !== project.owner._id)]; // Eviter les doublons
+	const allMembers = project?.owner ? [project.owner, ...(project.members || []).filter((m) => m._id !== project.owner._id)] : []; // Eviter les doublons
 	return (
 		<div className="project-details-page p-8">
 			<button
@@ -172,8 +182,9 @@ const ProjectDetailsPage = () => {
 			>
 				Tableau de Bord
 			</button>
-			<h2 className="text-3xl font-bold mb-2">{project.title}</h2>
-			<p className="text-dark-500 mb-6">{project.description}</p>
+			{error && <p className="error-message mb-4">{error}</p>}
+			<h2 className="text-3xl font-bold mb-2">{project?.title}</h2>
+			<p className="text-dark-500 mb-6">{project?.description}</p>
 
 			<div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 				{/* Colonne1 : creation des taches */}
@@ -189,7 +200,7 @@ const ProjectDetailsPage = () => {
 					) : (
 						<div className="space-y-3">
 							{tasks.map((task) => (
-								<div key={task._id} className="card">
+								<div key={task._id} className={getPriorityCardClass(task.priority)}>
 									<div className="flex border-b border-dark-300 justify-between items-start">
 										<h3 className="font-bold text-base">{task.title}</h3>
 										<div className="flex gap-1">
@@ -264,7 +275,7 @@ const ProjectDetailsPage = () => {
 													<option value=""> Non assigne</option>
 													{allMembers.map(member => (
 														<option key={member._id} value={member._id}>
-															{member.name}
+															{member.name} - {member?.role}
 														</option>
 													))}
 												</select>
@@ -283,12 +294,18 @@ const ProjectDetailsPage = () => {
 											</div>
 										</div>
 									) : (
-										<p className="text-xs">
-											<strong>Status:</strong> {task.status} | {" "}
-											<strong>Priorité:</strong> {task.priority} | {" "}
-											<strong>Assignée à:</strong> {task.assignedTo ? task.assignedTo.name : "Non assignée"} | {" "} <strong>Échéance: </strong>
-											{task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "-"}
-										</p>
+										<div className="flex flex-wrap items-center gap-2 mt-2">
+											<StatusBadge status={task.status} />
+											<PriorityBadge priority={task.priority} />
+											<span className="text-xs text-dark-300">|</span>
+											<span className="text-xs text-dark-500">
+												🧔{task.assignedTo ? task.assignedTo.name : "Non assignée"}
+											</span>
+											<span className="text-xs text-dark-300">|</span>
+											<span className="text-xs text-dark-500">
+												🗓️ {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "-"}
+											</span>
+										</div>
 									)}
 								</div>
 							))}
@@ -300,9 +317,11 @@ const ProjectDetailsPage = () => {
 				<div className="lg:col-span-1 p-4">
 					<div className="project-member border-b border-dark-300 pb-4">
 						<h2 className="text-xl font-semibold mb-4">Membres du projet</h2>
-						<h5 className="mb-3 text-base">
-							Crée par: <strong>{project.owner.name || project.owner.email}</strong> ({project.owner.role})
-						</h5>
+						{project?.owner && (
+							<h5 className="mb-3 text-base">
+								Crée par: <strong>{project.owner.name || project.owner.email}</strong> ({project.owner.role})
+							</h5>
+						)}
 						<h6 className="font-semibold text-base">Membres:</h6>
 						<ul role="list" className="list-disc px-4">
 							{allMembers.map((member) => (
@@ -356,7 +375,7 @@ const ProjectDetailsPage = () => {
 
 			{/* Section Chat */}
 			<div className="mt-8">
-				<Chat projectId={projectId} />
+				<Chat projectId={project?._id || projectId} />
 			</div>
 		</div>
 	);

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
-import { connectSocket, disconnectSocket, getSocket } from "../services/socketService";
+import { connectSocket, getSocket } from "../services/socketService";
 import messageService from "../services/messageService";
+import useOnlineStatus from "../hooks/useOnlineStatus";
+import cacheService from "../services/cacheService";
 
 const Chat = ({ projectId }) => {
     const [messages, setMessages] = useState([]);
@@ -8,9 +10,16 @@ const Chat = ({ projectId }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const messagesEndRef = useRef(null); // Pour le scoll automatique
+    const isOnline = useOnlineStatus();
 
     // Recuperer l'utilisateur connecte
-    const currentUser = JSON.parse(localStorage.getItem("user"));
+    const currentUser = (() => {
+        try {
+            return JSON.parse(localStorage.getItem("user") || "null");
+        } catch {
+            return null;
+        }
+    })();
 
     // Scroll automatique vers le bas a chaque nouveau message
     const scrollToBottom = () => {
@@ -21,30 +30,75 @@ const Chat = ({ projectId }) => {
         scrollToBottom();
     }, [messages]);
 
+    // 1 Charger l'historique des gens
+    const loadMessages = async () => {
+        try {
+            const history = await messageService.getMessages(projectId);
+            setMessages(history);
+            setError('');
+        } catch (error) {
+            setError("Erreur lors du chargement des messages.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const flushPendingMessages = async () => {
+        const socket = getSocket();
+        if (!socket?.connected) return;
+
+        const pending = messageService.getPendingMessages(projectId);
+        pending.forEach((msg) => {
+            socket.emit("send_message", {
+                projectId,
+                content: msg.content,
+            });
+        });
+
+        const cached = await messageService.getMessages(projectId);
+        setMessages(cached);
+    }
+
     useEffect(() => {
+
+        let socket = null;
         const token = localStorage.getItem("token");
 
-        // 1 Charger l'historique des gens
-        const loadMessages = async () => {
-            try {
-                const history = await messageService.getMessages(projectId);
-                setMessages(history);
-            } catch (error) {
-                setError("Erreur lors du chargement des messages.");
-            } finally {
-                setLoading(false);
-            }
-        };
         loadMessages();
 
         // 2. Connecter le socket et rejoindre le salon du projet
-        const socket = connectSocket(token);
-        socket.emit("join_project", projectId);
+        if (isOnline) {
+            socket = connectSocket(token);
+            socket.emit("join_project", projectId);
 
-        // 3. Écouter les nouveaux messages
-        socket.on("receive_message", (message) => {
-            setMessages((prev) => [...prev, message]);
-        });
+            // 3. Écouter les nouveaux messages
+            socket.on("receive_message", (message) => {
+                setMessages((prev) => {
+                    const incomingSenderId = message?.sender?._id || message?.sender;
+                    const pendingIdx = prev.findIndex((m) => {
+                        const senderId = m?.sender?._id || m?.sender;
+                        const isCandidate = m?._pending || m?._failed;
+                        return isCandidate && m.content === message.content && senderId === incomingSenderId;
+                    });
+
+                    let merged;
+                    if (pendingIdx !== -1) {
+                        // Remplacer la version locale pending par la version confirmée serveur
+                        merged = [...prev];
+                        merged[pendingIdx] = message;
+                    } else {
+                        // Sinon, ajouter de façon idempotente
+                        merged = Array.from(new Map([...prev, message].map((m) => [m._id, m])).values());
+                    }
+
+                    cacheService.saveMessages(projectId, merged);
+                    return merged;
+                });
+            });
+
+            flushPendingMessages().catch(() => {});
+        }
+
 
         // Nettoyage : quitter le salon quand on quitte la page
         return () => {
@@ -54,23 +108,37 @@ const Chat = ({ projectId }) => {
                 s.off("receive_message");
             }
         };
-    }, [projectId]);
+    }, [projectId, isOnline]);
 
     const handleSendMessage = () => {
-        if (!newMessage.trim()) return;
+        const content = newMessage.trim();
+        if (!content) return;
 
         const socket = getSocket();
-        if (!socket?.connected) {
-            setError("Connexion perdue. Veuillez recharger la page.");
+        if (!isOnline || !socket?.connected) {
+            const localMsg = messageService.createLocalPendingMessage(projectId, content);
+            setMessages((prev) => [...prev, localMsg]);
+            setNewMessage("");
+            setError("Message enregistre hors ligne. Il sera envoye a la reconnexion.");
             return;
         }
 
-        socket.emit("send_message", {
-            projectId,
-            content: newMessage.trim(),
-        });
-
-        setNewMessage("");
+        try {
+            // En ligne, on n'ajoute pas une copie locale pending pour éviter les doublons.
+            socket.emit("send_message", {
+                projectId,
+                content: content,
+            });
+            setNewMessage("");
+            setError('');
+        } catch {
+            // Si l'envoi live échoue, on bascule en pending offline.
+            const localMsg = messageService.createLocalPendingMessage(projectId, content);
+            setMessages((prev) => [...prev, localMsg]);
+            setNewMessage("");
+            messageService.markMessageAsFailed(projectId, localMsg._id);
+            setError("Envoi impossible. Le message restera en attente.");
+        }
     };
 
     // Envoyer avec la touche Entrée
@@ -107,7 +175,8 @@ const Chat = ({ projectId }) => {
                     </p>
                 ) : (
                     messages.map((msg) => {
-                        const isMe = msg.sender._id === currentUser?._id;
+                        const senderId = msg?.sender?._id || msg?.sender;
+                        const isMe = senderId === currentUser?._id;
                         return (
                             <div
                                 key={msg._id}
@@ -116,14 +185,14 @@ const Chat = ({ projectId }) => {
                                 {/* Nom de l'expéditeur */}
                                 {!isMe && (
                                     <span className="text-xs text-gray-500 mb-1 ml-1">
-                                        {msg.sender.name}
+                                        {msg?.sender?.name || "Utilisateur"}
                                     </span>
                                 )}
                                 {/* Bulle du message */}
                                 <div
                                     className={`max-w-xs px-3 py-2 rounded-lg text-sm ${isMe
-                                            ? "bg-green-600 text-white rounded-br-none"
-                                            : "bg-gray-100 text-gray-800 rounded-bl-none"
+                                        ? "bg-green-600 text-white rounded-br-none"
+                                        : "bg-gray-100 text-gray-800 rounded-bl-none"
                                         }`}
                                 >
                                     {msg.content}
@@ -131,6 +200,8 @@ const Chat = ({ projectId }) => {
                                 {/* Heure */}
                                 <span className="text-xs text-gray-400 mt-1">
                                     {formatTime(msg.createdAt)}
+                                    {msg._pending ? " ⌚ en attente" : ""}
+                                    {msg._failed ? " ⛔ echec" : ""}
                                 </span>
                             </div>
                         );

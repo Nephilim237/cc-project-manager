@@ -1,67 +1,65 @@
 const KEYS = {
 	PROJECTS: "cc_projects_cache",
-	TASKS_PREFIX: "cc_tasks_cache_", // On va rajouter le projectId par la suite
+	TASKS_PREFIX: "cc_tasks_cache_",
 	USERS: "cc_users_cache",
+	MESSAGES_PREFIX: "cc_messages_cache_",
+	OFFLINE_QUEUE: "cc_offline_queue",
 };
 
-// Sauvegarder les projets
-const saveProjects = (projects) => {
+const readJSON = (key, fallback) => {
 	try {
-		localStorage.setItem(KEYS.PROJECTS, JSON.stringify(projects));
-	} catch (error) {
-		console.warn("Erreur Cache projets:", error);
+		const data = localStorage.getItem(key);
+		return data ? JSON.parse(data) : fallback;
+	} catch {
+		return fallback;
 	}
 };
 
-// Lire les projets depuis le cache
-const getProjects = () => {
+const writeJSON = (key, value) => {
 	try {
-		const data = localStorage.getItem(KEYS.PROJECTS);
-		return data ? JSON.parse(data) : [];
+		localStorage.setItem(key, JSON.stringify(value));
 	} catch (error) {
-		console.warn("Erreur recuperation projet cache: ", error);
-		return [];
+		console.warn("Erreur cache:", error);
 	}
 };
 
-// Sauvegrader les taches d'un projet depuis le cache
-const saveTasks = (projectId, tasks) => {
-	try {
-		localStorage.setItem(`${KEYS.TASKS_PREFIX}${projectId}`, JSON.stringify(tasks));
-	} catch (error) {
-		console.warn("Erreur cache taches: ", error);
-	}
-};
+// Projects
+const saveProjects = (projects) => writeJSON(KEYS.PROJECTS, projects || []);
+const getProjects = () => readJSON(KEYS.PROJECTS, []);
 
-// Lire les taches d'un projet depusi el cache
-const getTasks = (projectId) => {
+// Tasks
+const saveTasks = (projectId, tasks) => writeJSON(`${KEYS.TASKS_PREFIX}${projectId}`, tasks || []);
+const getTasks = (projectId) => readJSON(`${KEYS.TASKS_PREFIX}${projectId}`, []);
+const removeTasks = (projectId) => {
 	try {
-		const data = localStorage.getItem(`${KEYS.TASKS_PREFIX}${projectId}`);
-		return data ? JSON.parse(data) : [];
-	} catch (error) {
-		console.warn("Erreur recuperation taches cache: ", error);
-		return [];
+		localStorage.removeItem(`${KEYS.TASKS_PREFIX}${projectId}`);
+	} catch(error) {
+		console.warn("Erreur suppression cache taches:", error);
 	}
-};
+}
 
-// Sauvegarder les utilisateur dans le cache
-const saveUsers = (users) => {
-	try {
-		localStorage.setItem(KEYS.USERS, JSON.stringify(users));
-	} catch (error) {
-		console.warn("Erreur cache taches: ", error);
-	}
-};
+// Users
+const saveUsers = (users) => writeJSON(KEYS.USERS, users || []);
+const getUsers = () => readJSON(KEYS.USERS, []);
 
-// Lire les utilisateurs depuis le cache
-const getUsers = () => {
-	try {
-		const data = localStorage.getItem(KEYS.USERS);
-		return data ? JSON.parse(data) : [];
-	} catch (error) {
-		console.warn("Erreur recuperation taches cache: ", error);
-		return [];
-	}
-};
+// Messages
+const saveMessages = (projectId, messages) => writeJSON(`${KEYS.MESSAGES_PREFIX}${projectId}`, messages || []);
+const getMessages = (projectId) => readJSON(`${KEYS.MESSAGES_PREFIX}${projectId}`, []);
 
-export default { saveProjects, getProjects, saveTasks, getTasks, saveUsers, getUsers };
+// Queue
+const getQueue = () => readJSON(KEYS.OFFLINE_QUEUE, []);
+const saveQueue = (queue) => writeJSON(KEYS.OFFLINE_QUEUE, queue || []);
+
+export default {
+	saveProjects,
+	getProjects,
+	saveTasks,
+	getTasks,
+	removeTasks,
+	saveUsers,
+	getUsers,
+	saveMessages,
+	getMessages,
+	getQueue,
+	saveQueue,
+};
